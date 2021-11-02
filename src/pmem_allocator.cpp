@@ -9,6 +9,7 @@
 
 #include "libpmem.h"
 #include "pmem_allocator.hpp"
+#include "thread_manager.hpp"
 
 #define PATH_MAX 255
 
@@ -18,7 +19,8 @@ PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
         : pmem_(pmem), thread_cache_(max_access_threads), block_size_(block_size),
           segment_size_(num_segment_blocks * block_size), offset_head_(0),
           pmem_size_(pmem_size),
-          free_list_(block_size, max_access_threads), thread_manager_(max_access_threads) {
+          free_list_(block_size, max_access_threads),
+          thread_manager_(std::make_shared<ThreadManager>(max_access_threads)) {
     init_data_size_2_block_size();
 }
 

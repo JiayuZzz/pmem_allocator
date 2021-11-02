@@ -1,4 +1,10 @@
+#pragma once
+
 #include <unordered_set>
+#include <memory>
+#include <atomic>
+
+#include "spin_mutex.hpp"
 
 class ThreadManager;
 
@@ -18,32 +24,9 @@ class ThreadManager : public std::enable_shared_from_this<ThreadManager> {
 public:
     ThreadManager(uint32_t max_threads) : max_threads_(max_threads), ids_(0) {}
 
-    bool MaybeInitThread(Thread &t) {
-        if (t.id < 0) {
-            if (!usable_id_.empty()) {
-                std::lock_guard<SpinMutex> lg(spin_);
-                if (!usable_id_.empty()) {
-                    auto it = usable_id_.begin();
-                    t.id = *it;
-                    usable_id_.erase(it);
-                    t.thread_manager = shared_from_this();
-                    return true;
-                }
-            }
-            int id = ids_.fetch_add(1, std::memory_order_relaxed);
-            if (id >= max_threads_) {
-                return false;
-            }
-            t.id = id;
-            t.thread_manager = shared_from_this();
-        }
-        return true;
-    }
+    bool MaybeInitThread(Thread &t);
 
-    void Release(const Thread &t) {
-        std::lock_guard<SpinMutex> lg(spin_);
-        usable_id_.insert(t.id);
-    }
+    void Release(const Thread &t);
 
 private:
     std::atomic<uint32_t> ids_;

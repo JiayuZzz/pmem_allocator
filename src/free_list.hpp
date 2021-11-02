@@ -12,6 +12,7 @@
 
 #include "space_entry.hpp"
 #include "spin_mutex.hpp"
+#include "thread_manager.hpp"
 
 
 constexpr uint32_t kFreelistMaxClassifiedBlockSize = 255;

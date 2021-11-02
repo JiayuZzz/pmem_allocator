@@ -3,8 +3,8 @@
  */
 
 #include "free_list.hpp"
-#include "pmem_allocator.hpp"
 #include "spin_mutex.hpp"
+#include "thread_manager.hpp"
 
 #include <mutex>
 #include <libpmem.h>

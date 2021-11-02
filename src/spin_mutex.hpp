@@ -1,3 +1,6 @@
+#pragma once
+
+
 class SpinMutex {
 private:
     std::atomic_flag locked = ATOMIC_FLAG_INIT;

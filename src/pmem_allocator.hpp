@@ -1,7 +1,3 @@
-/* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2021 Intel Corporation
- */
-
 #pragma once
 
 #include <fcntl.h>
@@ -73,7 +69,7 @@ private:
                   uint32_t block_size, uint32_t max_access_threads);
 
     inline bool MaybeInitAccessThread() {
-        return thread_manager_.MaybeInitThread(access_thread);
+        return thread_manager_->MaybeInitThread(access_thread);
     }
 
     // Write threads cache a dedicated PMem segment and a free space to
@@ -113,7 +109,7 @@ private:
     char *pmem_;
     uint64_t pmem_size_;
     Freelist free_list_;
-    ThreadManager thread_manager_;
+    std::shared_ptr<ThreadManager> thread_manager_;
     // For quickly get corresponding block size of a requested data size
     std::vector<uint16_t> data_size_2_block_size_;
 };
