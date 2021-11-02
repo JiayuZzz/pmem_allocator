@@ -1,0 +1,12 @@
+build/
+.cache/
+*.a
+*.lib
+.idea/
+.vscode/
+cmake-build-*
+.vs/
+*.o
+*.d
+*.obj
+*.so
