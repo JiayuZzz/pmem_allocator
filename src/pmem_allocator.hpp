@@ -16,8 +16,44 @@
 constexpr uint64_t kNullPmemOffset = UINT64_MAX;
 constexpr uint64_t kMinPaddingBlocks = 8;
 
-using FreeList = std::vector<std::vector<void *>>;
-using Segments = std::vector<PMemSpaceEntry>;
+template<typename T>
+class FixVector {
+public:
+    FixVector(uint64_t size) : size_(size) {
+        data_ = new T[size];
+    }
+
+    FixVector() = delete;
+
+    FixVector(const FixVector<T> &v) {
+        size_ = v.size_;
+        data_ = new T[size_];
+        memcpy(data_, v.data_, size_ * sizeof(T));
+    }
+
+    ~FixVector() {
+        if (data_ != nullptr) {
+            delete[] data_;
+        }
+    }
+
+    T &operator[](uint64_t index) {
+        assert(index < size_);
+        return data_[index];
+    }
+
+    uint64_t size() {
+        return size_;
+    }
+
+private:
+    T *data_;
+    uint64_t size_;
+};
+
+using FreeList = FixVector<std::vector<void *>>;
+using Segments = FixVector<PMemSpaceEntry>;
+using Locks = FixVector<SpinMutex>;
 
 // Manage allocation/de-allocation of PMem space at block unit
 //
@@ -80,15 +116,21 @@ private:
     struct ThreadCache {
         ThreadCache(uint32_t max_classified_block_size) : freelist(max_classified_block_size + 1),
                                                           segments(max_classified_block_size + 1),
-                                                          spins(max_classified_block_size + 1) {}
+                                                          locks(max_classified_block_size + 1) {
+        }
 
         // A array of array to store freed space, the space size is aligned to block_size_, each array corresponding to a dedicated block size which is equal to its index
         FreeList freelist;
         // Thread own segments, each segment corresponding to a dedicated block size which is equal to its index
         Segments segments;
         // Protect freelist;
-        std::vector<SpinMutex> spins;
+        Locks locks;
+
+        char padding[64 - sizeof(freelist) - sizeof(segments) - sizeof(locks)];
     };
+
+    static_assert(sizeof(ThreadCache) % 64 == 0);
+
 
     bool AllocateSegmentSpace(PMemSpaceEntry *segment_entry);
 

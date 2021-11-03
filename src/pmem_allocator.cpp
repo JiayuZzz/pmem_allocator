@@ -16,7 +16,7 @@
 PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
                              uint64_t num_segment_blocks, uint32_t block_size,
                              uint32_t max_access_threads)
-        : pmem_(pmem), thread_cache_(max_access_threads, 32), block_size_(block_size),
+        : pmem_(pmem), block_size_(block_size), thread_cache_(max_access_threads, 32),
           segment_size_(num_segment_blocks * block_size), offset_head_(0),
           pmem_size_(pmem_size),
           thread_manager_(std::make_shared<ThreadManager>(max_access_threads)) {
@@ -33,10 +33,8 @@ void PMEMAllocator::Free(const PMemSpaceEntry &entry) {
         assert(entry.size % block_size_ == 0);
         auto b_size = entry.size / block_size_;
         auto &thread_cache = thread_cache_[access_thread.id];
-        if (b_size >= thread_cache.freelist.size()) {
-            thread_cache.freelist.resize(b_size + 1);
-        }
-//        std::lock_guard<SpinMutex> lg(thread_cache.spins[b_size]);
+        assert(b_size < thread_cache.freelist.size());
+        std::lock_guard<SpinMutex> lg(thread_cache.locks[b_size]);
         thread_cache.freelist[b_size].emplace_back(entry.addr);
     }
 }
@@ -221,6 +219,7 @@ PMemSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
     }
     auto &thread_cache = thread_cache_[access_thread.id];
     for (auto i = b_size; i < thread_cache.freelist.size(); i++) {
+        std::lock_guard<SpinMutex> lg(thread_cache.locks[i]);
         if (thread_cache.segments[i].size < aligned_size) {
             // Fetch free list from pool
             if (thread_cache.freelist[i].empty()) {
