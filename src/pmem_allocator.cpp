@@ -36,7 +36,7 @@ void PMEMAllocator::Free(const PMemSpaceEntry &entry) {
         if (b_size >= thread_cache.freelist.size()) {
             thread_cache.freelist.resize(b_size + 1);
         }
-        std::lock_guard<SpinMutex> lg(thread_cache.spins[b_size]);
+//        std::lock_guard<SpinMutex> lg(thread_cache.spins[b_size]);
         thread_cache.freelist[b_size].emplace_back(entry.addr);
     }
 }

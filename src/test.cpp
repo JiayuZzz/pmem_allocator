@@ -16,7 +16,7 @@ int main() {
                                                                1024 * 1024 / block_size,
                                                                block_size, threads, false);
     std::vector<std::thread> ths;
-    uint64_t cycle = 1024 * 1024;
+    uint64_t cycle = 1024 * 1024 * 1024;
     int cnt = 1024;
     auto bench = [&](int tid) {
         std::vector<PMemSpaceEntry> entries(cnt);
