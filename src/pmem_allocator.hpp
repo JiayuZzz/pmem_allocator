@@ -16,6 +16,9 @@
 constexpr uint64_t kNullPmemOffset = UINT64_MAX;
 constexpr uint64_t kMinPaddingBlocks = 8;
 
+using FreeList = std::vector<std::vector<void *>>;
+using Segments = std::vector<PMemSpaceEntry>;
+
 // Manage allocation/de-allocation of PMem space at block unit
 //
 // PMem space consists of several segment, and a segment is consists of
@@ -43,6 +46,21 @@ public:
         return nullptr;
     }
 
+    // Populate PMem space so the following access can be faster
+    // Warning! this will zero the entire PMem space
+    void PopulateSpace();
+
+    // Regularly execute by background thread of KVDK
+    void BackgroundWork() {}
+
+private:
+    PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
+                  uint32_t block_size, uint32_t max_access_threads);
+
+    inline bool MaybeInitAccessThread() {
+        return thread_manager_->MaybeInitThread(access_thread);
+    }
+
     inline uint64_t addr2offset(const void *addr) {
         if (addr) {
             uint64_t offset = (char *) addr - pmem_;
@@ -57,30 +75,19 @@ public:
         return offset < pmem_size_ && offset != kNullPmemOffset;
     }
 
-    // Populate PMem space so the following access can be faster
-    // Warning! this will zero the entire PMem space
-    void PopulateSpace();
-
-    // Regularly execute by background thread of KVDK
-    void BackgroundWork() { free_list_.OrganizeFreeSpace(); }
-
-private:
-    PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
-                  uint32_t block_size, uint32_t max_access_threads);
-
-    inline bool MaybeInitAccessThread() {
-        return thread_manager_->MaybeInitThread(access_thread);
-    }
-
     // Write threads cache a dedicated PMem segment and a free space to
     // avoid contention
     struct ThreadCache {
-        // Space got from free list, the size is aligned to block_size_
-        PMemSpaceEntry free_entry;
-        // Space fetched from head of PMem segments, the size is aligned to
-        // block_size_
-        PMemSpaceEntry segment_entry;
-        char padding[64 - sizeof(PMemSpaceEntry) * 2];
+        ThreadCache(uint32_t max_classified_block_size) : freelist(max_classified_block_size + 1),
+                                                          segments(max_classified_block_size + 1),
+                                                          spins(max_classified_block_size + 1) {}
+
+        // A array of array to store freed space, the space size is aligned to block_size_, each array corresponding to a dedicated block size which is equal to its index
+        FreeList freelist;
+        // Thread own segments, each segment corresponding to a dedicated block size which is equal to its index
+        Segments segments;
+        // Protect freelist;
+        std::vector<SpinMutex> spins;
     };
 
     bool AllocateSegmentSpace(PMemSpaceEntry *segment_entry);
@@ -108,7 +115,6 @@ private:
     std::atomic<uint64_t> offset_head_;
     char *pmem_;
     uint64_t pmem_size_;
-    Freelist free_list_;
     std::shared_ptr<ThreadManager> thread_manager_;
     // For quickly get corresponding block size of a requested data size
     std::vector<uint16_t> data_size_2_block_size_;

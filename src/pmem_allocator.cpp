@@ -16,10 +16,9 @@
 PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
                              uint64_t num_segment_blocks, uint32_t block_size,
                              uint32_t max_access_threads)
-        : pmem_(pmem), thread_cache_(max_access_threads), block_size_(block_size),
+        : pmem_(pmem), thread_cache_(max_access_threads, 32), block_size_(block_size),
           segment_size_(num_segment_blocks * block_size), offset_head_(0),
           pmem_size_(pmem_size),
-          free_list_(block_size, max_access_threads),
           thread_manager_(std::make_shared<ThreadManager>(max_access_threads)) {
     init_data_size_2_block_size();
 }
@@ -32,7 +31,13 @@ void PMEMAllocator::Free(const PMemSpaceEntry &entry) {
 
     if (entry.size > 0 && entry.addr != nullptr) {
         assert(entry.size % block_size_ == 0);
-        free_list_.Push(entry);
+        auto b_size = entry.size / block_size_;
+        auto &thread_cache = thread_cache_[access_thread.id];
+        if (b_size >= thread_cache.freelist.size()) {
+            thread_cache.freelist.resize(b_size + 1);
+        }
+        std::lock_guard<SpinMutex> lg(thread_cache.spins[b_size]);
+        thread_cache.freelist[b_size].emplace_back(entry.addr);
     }
 }
 
@@ -210,54 +215,38 @@ PMemSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
     uint32_t b_size = size_2_block_size(size);
     uint32_t aligned_size = b_size * block_size_;
     // Now the requested block size should smaller than segment size
-    // TODO: handle this
     if (aligned_size > segment_size_ || aligned_size == 0) {
         fprintf(stderr, "allocating size is 0 or larger than PMem allocator segment\n");
         return space_entry;
     }
     auto &thread_cache = thread_cache_[access_thread.id];
-    while (thread_cache.segment_entry.size < aligned_size) {
-        // allocate from free list space
-        while (1) {
-            if (thread_cache.free_entry.size >= aligned_size) {
-                auto extra_space = thread_cache.free_entry.size - aligned_size;
-                assert(extra_space % block_size_ == 0);
-                if (extra_space < kMinPaddingBlocks * block_size_) {
-                    aligned_size = thread_cache.free_entry.size;
-                }
+    for (auto i = b_size; i < thread_cache.freelist.size(); i++) {
+        if (thread_cache.segments[i].size < aligned_size) {
+            // Fetch free list from pool
+            if (thread_cache.freelist[i].empty()) {
 
-                space_entry = thread_cache.free_entry;
-                space_entry.size = aligned_size;
-                thread_cache.free_entry.size -= aligned_size;
-                thread_cache.free_entry.addr = (char *) thread_cache.free_entry.addr + aligned_size;
-                return space_entry;
             }
-
-            if (thread_cache.free_entry.size > 0) {
-                assert(thread_cache.free_entry.addr != nullptr);
-                Free(thread_cache.free_entry);
-                thread_cache.free_entry.size = 0;
-                thread_cache.free_entry.addr = nullptr;
+            // Get space from free list
+            if (thread_cache.freelist[i].size() > 0) {
+                space_entry.addr = thread_cache.freelist[i].back();
+                space_entry.size = i * block_size_;
+                thread_cache.freelist[i].pop_back();
+                break;
             }
-
-            // allocate from free list
-            if (free_list_.Get(aligned_size, &thread_cache.free_entry)) {
+            // Allocate a new segment for requesting block size
+            if (!AllocateSegmentSpace(&thread_cache.segments[b_size])) {
                 continue;
+            } else {
+                i = b_size;
             }
-            break;
         }
-
-        // allocate a new segment, add remainning space of the old one
-        // to the free list
-        if (!AllocateSegmentSpace(&thread_cache.segment_entry)) {
-            fprintf(stderr, "PMem OVERFLOW!\n");
-            return space_entry;
-        }
+        assert(thread_cache.segments[i].size >= aligned_size);
+        space_entry.addr = thread_cache.segments[i].addr;
+        space_entry.size = aligned_size;
+        thread_cache.segments[i].size -= aligned_size;
+        thread_cache.segments[i].addr = (char *) thread_cache.segments[i].addr + aligned_size;
+        break;
     }
-    space_entry.addr = thread_cache.segment_entry.addr;
-    space_entry.size = aligned_size;
-    thread_cache.free_entry.addr = (char *) thread_cache.free_entry.addr + aligned_size;
-    thread_cache.segment_entry.size -= aligned_size;
     return space_entry;
 }
 
