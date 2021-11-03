@@ -49,7 +49,7 @@ class PMEMAllocator;
 class SpaceEntryPool {
 public:
     SpaceEntryPool(uint32_t max_classified_b_size)
-            : pool_(max_classified_b_size), spins_(max_classified_b_size) {}
+            : pool_(max_classified_b_size + 1), spins_(max_classified_b_size + 1) {}
 
     // move a entry list of b_size free space entries to pool, "src" will be empty
     // after move
@@ -61,7 +61,7 @@ public:
     }
 
     // try to fetch b_size free space entries from a entry list of pool to dst
-    bool TryFetchEntryList(std::vector<void *> &dst, uint32_t b_size) {
+    bool FetchEntryList(std::vector<void *> &dst, uint32_t b_size) {
         std::lock_guard<SpinMutex> lg(spins_[b_size]);
         if (pool_[b_size].size() != 0) {
             dst.swap(pool_[b_size].back());

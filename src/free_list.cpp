@@ -37,7 +37,7 @@ bool Freelist::Get(uint32_t size, PMemSpaceEntry *space_entry) {
     for (uint32_t i = b_size; i < thread_cache.active_entries.size(); i++) {
         std::lock_guard<SpinMutex> lg(thread_cache.spins[i]);
         if (thread_cache.active_entries[i].size() == 0) {
-            if (!active_pool_.TryFetchEntryList(thread_cache.active_entries[i], i)) {
+            if (!active_pool_.FetchEntryList(thread_cache.active_entries[i], i)) {
                 // no usable b_size free space entry
                 continue;
             }

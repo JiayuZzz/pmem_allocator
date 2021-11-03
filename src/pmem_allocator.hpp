@@ -8,8 +8,8 @@
 #include <vector>
 #include <atomic>
 #include <unordered_map>
+#include <assert.h>
 
-#include "free_list.hpp"
 #include "thread_manager.hpp"
 #include "space_entry.hpp"
 
@@ -49,6 +49,50 @@ public:
 private:
     T *data_;
     uint64_t size_;
+};
+
+// free entry pool consists of three level vectors, the first level
+// indicates different block size, each block size consists of several free
+// space entry lists (the second level), and each list consists of several
+// free space entries (the third level).
+//
+// For a specific block size, a write thread will move a entry list from the
+// pool to its thread cache while no usable free space in the cache, or move a
+// entry list to the pool while too many entries cached.
+//
+// Organization of the three level vectors:
+//
+// block size (1st level)   entry list (2nd level)   entries (3th level)
+//     1   -----------------   list1    ------------   entry1
+//                    |                         |---   entry2
+//                    |-----   list2    ------------   entry1
+//                                              |---   entry2
+//                                              |---   entry3
+//                              ...
+//     2   -----------------   list1    ------------   entry1
+//                    |                         |---   entry2
+//                    |                         |---   entry3
+//                    |-----   list2
+//                              ...
+//    ...
+// max_block_size   --------   list1
+//                    |-----   list2
+class SpaceEntryPool {
+public:
+    SpaceEntryPool(uint32_t max_classified_b_size)
+            : pool_(max_classified_b_size), spins_(max_classified_b_size) {}
+
+    // move a entry list of b_size free space entries to pool, "src" will be empty
+    // after move
+    void MoveEntryList(std::vector<void *> &src, uint32_t b_size);
+
+    // try to fetch b_size free space entries from a entry list of pool to dst
+    bool FetchEntryList(std::vector<void *> &dst, uint32_t b_size);
+
+private:
+    std::vector<std::vector<std::vector<void *>>> pool_;
+    // Entry lists of a same block size guarded by a spin lock
+    std::vector<SpinMutex> spins_;
 };
 
 using FreeList = FixVector<std::vector<void *>>;
@@ -158,6 +202,7 @@ private:
     char *pmem_;
     uint64_t pmem_size_;
     std::shared_ptr<ThreadManager> thread_manager_;
+    SpaceEntryPool pool_;
     // For quickly get corresponding block size of a requested data size
     std::vector<uint16_t> data_size_2_block_size_;
 };

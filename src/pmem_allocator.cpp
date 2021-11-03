@@ -6,6 +6,7 @@
 #include <thread>
 #include <string.h>
 #include <sys/stat.h>
+#include <mutex>
 
 #include "libpmem.h"
 #include "pmem_allocator.hpp"
@@ -13,10 +14,27 @@
 
 #define PATH_MAX 255
 
+void SpaceEntryPool::MoveEntryList(std::vector<void *> &src, uint32_t b_size) {
+    std::lock_guard<SpinMutex> lg(spins_[b_size]);
+    assert(b_size < pool_.size());
+    pool_[b_size].emplace_back();
+    pool_[b_size].back().swap(src);
+}
+
+bool SpaceEntryPool::FetchEntryList(std::vector<void *> &dst, uint32_t b_size) {
+    std::lock_guard<SpinMutex> lg(spins_[b_size]);
+    if (pool_[b_size].size() != 0) {
+        dst.swap(pool_[b_size].back());
+        pool_[b_size].pop_back();
+        return true;
+    }
+    return false;
+}
+
 PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
                              uint64_t num_segment_blocks, uint32_t block_size,
                              uint32_t max_access_threads)
-        : pmem_(pmem), block_size_(block_size), thread_cache_(max_access_threads, 32),
+        : pmem_(pmem), block_size_(block_size), thread_cache_(max_access_threads, 32), pool_(32),
           segment_size_(num_segment_blocks * block_size), offset_head_(0),
           pmem_size_(pmem_size),
           thread_manager_(std::make_shared<ThreadManager>(max_access_threads)) {
@@ -223,7 +241,7 @@ PMemSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
         if (thread_cache.segments[i].size < aligned_size) {
             // Fetch free list from pool
             if (thread_cache.freelist[i].empty()) {
-
+//                pool_.FetchEntryList(thread_cache.freelist[i], i);
             }
             // Get space from free list
             if (thread_cache.freelist[i].size() > 0) {

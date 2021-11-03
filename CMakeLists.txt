@@ -4,7 +4,6 @@ project(PMEM_ALLOCATOR
         LANGUAGES CXX C)
 
 set(SOURCES src/pmem_allocator.cpp
-        src/free_list.cpp
         src/thread_manager.cpp)
 
 set(FLAGS "-mavx -mavx2 -O2 -g -DNDEBUG")
