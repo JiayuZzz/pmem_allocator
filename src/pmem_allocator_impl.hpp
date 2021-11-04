@@ -31,6 +31,9 @@ using Segment = PMemSpaceEntry;
 // maximum allocated data size should smaller than a segment.
 class PMemAllocatorImpl : public PMemAllocator {
 public:
+  PMemAllocatorImpl(char *pmem, uint64_t pmem_size, uint32_t max_access_threads,
+                    const PMemAllocatorHint &hint);
+
   PMemAllocatorImpl(char *pmem, uint64_t pmem_size, uint64_t segment_size,
                     uint32_t block_size, uint32_t max_access_threads);
 
@@ -156,12 +159,17 @@ private:
     if (data_size < data_size_2_block_size_.size()) {
       return data_size_2_block_size_[data_size];
     }
+    return calculate_block_size(data_size);
+  }
+
+  inline uint32_t calculate_block_size(uint32_t data_size) {
     return data_size / block_size_ + (data_size % block_size_ == 0 ? 0 : 1);
   }
 
   const uint64_t pmem_size_;
   const uint64_t segment_size_;
   const uint32_t block_size_;
+  const uint32_t max_classified_record_block_size_;
 
   char *pmem_;
   std::atomic<uint64_t> offset_head_;

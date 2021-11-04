@@ -28,19 +28,21 @@ int main() {
       int allocate_size = (cycle * block_size) % 1025;
 
       for (int j = 0; j < cnt; j++) {
-        //                pointers[j] = malloc(allocate_size);
+        //        pointers[j] = malloc(allocate_size);
         //                pointers[j] = memkind_malloc(kind, allocate_size);
         entries[j] = allocator->Allocate(allocate_size);
       }
 
       for (int j = 0; j < cnt; j++) {
-        //                free(pointers[j]);
+        //        free(pointers[j]);
         //                memkind_free(kind, pointers[j]);
         allocator->Free(entries[j]);
       }
       ops += cnt;
     }
   };
+
+  uint64_t benchmark_time = 30;
 
   for (int i = 0; i < threads; i++) {
     ths.emplace_back(bench, i);
@@ -55,7 +57,7 @@ int main() {
     printf("last qps %lu/s, total qps %lu/s\n", total_ops - last_ops,
            total_ops / elapsed_time);
     last_ops = total_ops;
-    if (elapsed_time == 30) {
+    if (elapsed_time == benchmark_time) {
       done = true;
       break;
     }
@@ -64,4 +66,6 @@ int main() {
   for (auto &t : ths) {
     t.join();
   }
+
+  return 0;
 }

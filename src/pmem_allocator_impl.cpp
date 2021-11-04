@@ -69,9 +69,8 @@ PMemAllocator *PMemAllocator::NewPMemAllocator(const std::string &pmem_file,
 
   PMemAllocatorImpl *allocator = nullptr;
   try {
-    allocator = new PMemAllocatorImpl(
-        pmem, pmem_size, allocator_configs.segment_size,
-        allocator_configs.allocation_unit, max_access_threads);
+    allocator = new PMemAllocatorImpl(pmem, pmem_size, max_access_threads,
+                                      allocator_configs);
   } catch (std::bad_alloc &err) {
     fprintf(stderr, "Error while initialize PMemAllocatorImpl: %s\n",
             err.what());
@@ -127,15 +126,18 @@ void PMemAllocatorImpl::BackgroundWork() {
 }
 
 PMemAllocatorImpl::PMemAllocatorImpl(char *pmem, uint64_t pmem_size,
-                                     uint64_t segment_size, uint32_t block_size,
-                                     uint32_t max_access_threads)
-    : pmem_(pmem), block_size_(block_size),
-      thread_cache_(max_access_threads, 32), pool_(32),
-      segment_size_(segment_size), offset_head_(0), pmem_size_(pmem_size),
+                                     uint32_t max_access_threads,
+                                     const PMemAllocatorHint &hint)
+    : pmem_(pmem), pmem_size_(pmem_size),
       thread_manager_(std::make_shared<ThreadManager>(max_access_threads)),
-      closing_(false) {
-  bg_threads_.emplace_back(&PMemAllocatorImpl::BackgroundWork, this);
+      block_size_(hint.allocation_unit), segment_size_(hint.segment_size),
+      max_classified_record_block_size_(
+          calculate_block_size(hint.max_common_allocation_size)),
+      pool_(max_classified_record_block_size_),
+      thread_cache_(max_access_threads, max_classified_record_block_size_),
+      offset_head_(0), closing_(false) {
   init_data_size_2_block_size();
+  bg_threads_.emplace_back(&PMemAllocatorImpl::BackgroundWork, this);
 }
 
 void PMemAllocatorImpl::Free(const PMemSpaceEntry &entry) {
