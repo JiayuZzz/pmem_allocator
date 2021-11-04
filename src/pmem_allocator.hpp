@@ -9,12 +9,13 @@
 #include <atomic>
 #include <unordered_map>
 #include <assert.h>
+#include <thread>
 
 #include "thread_manager.hpp"
 #include "space_entry.hpp"
 
 constexpr uint64_t kNullPmemOffset = UINT64_MAX;
-constexpr uint64_t kMinPaddingBlocks = 8;
+constexpr uint64_t kMinMovableListSize = 8;
 
 template<typename T>
 class FixVector {
@@ -80,7 +81,7 @@ private:
 class SpaceEntryPool {
 public:
     SpaceEntryPool(uint32_t max_classified_b_size)
-            : pool_(max_classified_b_size), spins_(max_classified_b_size) {}
+            : pool_(max_classified_b_size + 1), spins_(max_classified_b_size + 1) {}
 
     // move a entry list of b_size free space entries to pool, "src" will be empty
     // after move
@@ -130,8 +131,8 @@ public:
     // Warning! this will zero the entire PMem space
     void PopulateSpace();
 
-    // Regularly execute by background thread of KVDK
-    void BackgroundWork() {}
+    // Regularly execute by background thread
+    void BackgroundWork();
 
 private:
     PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
@@ -205,4 +206,6 @@ private:
     SpaceEntryPool pool_;
     // For quickly get corresponding block size of a requested data size
     std::vector<uint16_t> data_size_2_block_size_;
+    std::vector<std::thread> bg_threads_;
+    bool closing_;
 };

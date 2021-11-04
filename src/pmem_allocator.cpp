@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <mutex>
+#include <unistd.h>
 
 #include "libpmem.h"
 #include "pmem_allocator.hpp"
@@ -22,13 +23,40 @@ void SpaceEntryPool::MoveEntryList(std::vector<void *> &src, uint32_t b_size) {
 }
 
 bool SpaceEntryPool::FetchEntryList(std::vector<void *> &dst, uint32_t b_size) {
+    printf("spins size %lu pool size %lu\n", spins_.size(), pool_.size());
     std::lock_guard<SpinMutex> lg(spins_[b_size]);
     if (pool_[b_size].size() != 0) {
+        printf("access %u\n", b_size);
         dst.swap(pool_[b_size].back());
         pool_[b_size].pop_back();
+        printf("access %u done\n", b_size);
         return true;
     }
     return false;
+}
+
+void PMEMAllocator::BackgroundWork() {
+    while (1) {
+        if (closing_) return;
+        sleep(1);
+        // Move cached list to pool
+        std::vector<void *> moving_list;
+        for (auto &tc: thread_cache_) {
+            moving_list.clear();
+            for (size_t b_size = 1; b_size < tc.freelist.size(); b_size++) {
+                moving_list.clear();
+                if (tc.freelist[b_size].size() >= kMinMovableListSize) {
+                    std::unique_lock<SpinMutex> ul(tc.locks[b_size]);
+                    if (tc.freelist[b_size].size() >= kMinMovableListSize) {
+                        moving_list.swap(tc.freelist[b_size]);
+                    }
+                }
+                if (moving_list.size() > 0) {
+                    pool_.MoveEntryList(moving_list, b_size);
+                }
+            }
+        }
+    }
 }
 
 PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
@@ -37,7 +65,8 @@ PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
         : pmem_(pmem), block_size_(block_size), thread_cache_(max_access_threads, 32), pool_(32),
           segment_size_(num_segment_blocks * block_size), offset_head_(0),
           pmem_size_(pmem_size),
-          thread_manager_(std::make_shared<ThreadManager>(max_access_threads)) {
+          thread_manager_(std::make_shared<ThreadManager>(max_access_threads)), closing_(false) {
+    bg_threads_.emplace_back(&PMEMAllocator::BackgroundWork, this);
     init_data_size_2_block_size();
 }
 
@@ -52,7 +81,12 @@ void PMEMAllocator::Free(const PMemSpaceEntry &entry) {
         auto b_size = entry.size / block_size_;
         auto &thread_cache = thread_cache_[access_thread.id];
         assert(b_size < thread_cache.freelist.size());
-        std::lock_guard<SpinMutex> lg(thread_cache.locks[b_size]);
+        // Conflict with bg thread happens only if free entries more than kMinMovableListSize
+        std::unique_lock<SpinMutex> ul;
+        if (thread_cache.freelist[b_size].size() >= kMinMovableListSize) {
+            ul = std::unique_lock<SpinMutex>(thread_cache.locks[b_size], std::defer_lock);
+            ul.lock();
+        }
         thread_cache.freelist[b_size].emplace_back(entry.addr);
     }
 }
@@ -76,7 +110,13 @@ void PMEMAllocator::PopulateSpace() {
     printf("Populating done\n");
 }
 
-PMEMAllocator::~PMEMAllocator() { pmem_unmap(pmem_, pmem_size_); }
+PMEMAllocator::~PMEMAllocator() {
+    closing_ = true;
+    for (auto &t: bg_threads_) {
+        t.join();
+    }
+    pmem_unmap(pmem_, pmem_size_);
+}
 
 PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
                                                uint64_t pmem_size,
@@ -237,14 +277,19 @@ PMemSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
     }
     auto &thread_cache = thread_cache_[access_thread.id];
     for (auto i = b_size; i < thread_cache.freelist.size(); i++) {
-        std::lock_guard<SpinMutex> lg(thread_cache.locks[i]);
         if (thread_cache.segments[i].size < aligned_size) {
             // Fetch free list from pool
             if (thread_cache.freelist[i].empty()) {
-//                pool_.FetchEntryList(thread_cache.freelist[i], i);
+                pool_.FetchEntryList(thread_cache.freelist[i], i);
             }
             // Get space from free list
             if (thread_cache.freelist[i].size() > 0) {
+                std::unique_lock<SpinMutex> ul;
+                // Conflict with bg thread happens only if free entries more than kMinMovableListSize
+                if (thread_cache.freelist[i].size() >= kMinMovableListSize) {
+                    ul = std::unique_lock<SpinMutex>(thread_cache.locks[i], std::defer_lock);
+                    ul.lock();
+                }
                 space_entry.addr = thread_cache.freelist[i].back();
                 space_entry.size = i * block_size_;
                 thread_cache.freelist[i].pop_back();
