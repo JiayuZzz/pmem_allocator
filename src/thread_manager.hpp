@@ -4,7 +4,7 @@
 #include <memory>
 #include <unordered_set>
 
-#include "spin_mutex.hpp"
+#include "utils.hpp"
 
 class ThreadManager;
 

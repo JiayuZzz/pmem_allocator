@@ -1,9 +1,11 @@
-#include "pmem_allocator.hpp"
 #include "string.h"
 
 #include "memkind.h"
+#include "pmem_allocator.hpp"
+#include <atomic>
 #include <thread>
 #include <unistd.h>
+#include <vector>
 
 int main() {
   int threads = 64;
@@ -12,9 +14,8 @@ int main() {
   std::atomic<uint64_t> ops;
   memkind_t kind;
   memkind_create_pmem("/mnt/pmem0/memkind", 100ULL * 1024 * 1024 * 1024, &kind);
-  PMEMAllocator *allocator = PMEMAllocator::NewPMEMAllocator(
-      "/mnt/pmem0/pool", 1ULL * 100 * 1024 * 1024 * 1024,
-      1024 * 1024 / block_size, block_size, threads, false);
+  PMemAllocator *allocator = PMemAllocator::NewPMemAllocator(
+      "/mnt/pmem0/pool", 1ULL * 100 * 1024 * 1024 * 1024, threads, false);
   std::vector<std::thread> ths;
   uint64_t cycle = 1024 * 1024 * 1024;
   int cnt = 1024;
