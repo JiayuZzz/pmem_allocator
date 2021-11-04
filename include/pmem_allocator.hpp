@@ -17,17 +17,15 @@ struct PMemSpaceEntry {
 };
 
 struct PMemAllocatorHint {
-  PMemAllocatorHint() : PMemAllocatorHint(1024, 1 << 20, 32, 1) {}
+  PMemAllocatorHint() : PMemAllocatorHint(1 << 20, 32, 1) {}
 
-  PMemAllocatorHint(uint64_t _max_allocation_size, uint64_t _segment_size,
-                    uint32_t _allocation_unit, uint32_t _bg_thread_interval)
-      : max_allocation_size(_max_allocation_size), segment_size(_segment_size),
-        allocation_unit(_allocation_unit),
+  PMemAllocatorHint(uint64_t _segment_size, uint32_t _allocation_unit,
+                    uint32_t _bg_thread_interval)
+      : segment_size(_segment_size), allocation_unit(_allocation_unit),
         bg_thread_interval(_bg_thread_interval) {
     max_common_allocation_size = _allocation_unit << 7;
   }
 
-  uint64_t max_allocation_size;
   uint64_t segment_size;
   uint32_t allocation_unit;
   float bg_thread_interval;
@@ -36,8 +34,10 @@ struct PMemAllocatorHint {
 
 class PMemAllocator {
 public:
+  // Allocate a PMem space, return address and actually allocated space in bytes
   virtual PMemSpaceEntry Allocate(uint64_t size) = 0;
 
+  // Free a PMem space entry. The entry should be allocated by this allocator
   virtual void Free(const PMemSpaceEntry &entry) = 0;
 
   static PMemAllocator *NewPMemAllocator(const std::string &pmem_file,

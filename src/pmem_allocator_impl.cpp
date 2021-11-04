@@ -103,7 +103,7 @@ void PMemAllocatorImpl::BackgroundWork() {
   while (1) {
     if (closing_)
       return;
-    sleep(1);
+    usleep(bg_thread_interval_ * 1000000);
     // Move cached list to pool
     std::vector<void *> moving_list;
     for (auto &tc : thread_cache_) {
@@ -131,13 +131,16 @@ PMemAllocatorImpl::PMemAllocatorImpl(char *pmem, uint64_t pmem_size,
     : pmem_(pmem), pmem_size_(pmem_size),
       thread_manager_(std::make_shared<ThreadManager>(max_access_threads)),
       block_size_(hint.allocation_unit), segment_size_(hint.segment_size),
+      bg_thread_interval_(hint.bg_thread_interval),
       max_classified_record_block_size_(
           calculate_block_size(hint.max_common_allocation_size)),
       pool_(max_classified_record_block_size_),
       thread_cache_(max_access_threads, max_classified_record_block_size_),
       offset_head_(0), closing_(false) {
   init_data_size_2_block_size();
-  bg_threads_.emplace_back(&PMemAllocatorImpl::BackgroundWork, this);
+  if (bg_thread_interval_ > 0) {
+    bg_threads_.emplace_back(&PMemAllocatorImpl::BackgroundWork, this);
+  }
 }
 
 void PMemAllocatorImpl::Free(const PMemSpaceEntry &entry) {

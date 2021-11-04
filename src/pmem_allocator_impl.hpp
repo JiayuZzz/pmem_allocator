@@ -39,7 +39,7 @@ public:
 
   ~PMemAllocatorImpl();
 
-  // Allocate a PMem space, return offset and actually allocated space in bytes
+  // Allocate a PMem space, return address and actually allocated space in bytes
   PMemSpaceEntry Allocate(uint64_t size) override;
 
   // Free a PMem space entry. The entry should be allocated by this allocator
@@ -170,6 +170,7 @@ private:
   const uint64_t segment_size_;
   const uint32_t block_size_;
   const uint32_t max_classified_record_block_size_;
+  const uint32_t bg_thread_interval_;
 
   char *pmem_;
   std::atomic<uint64_t> offset_head_;
