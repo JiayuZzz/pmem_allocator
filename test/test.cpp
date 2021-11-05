@@ -72,7 +72,35 @@ int main() {
     }
   };
 
+  auto AllocateAccessFree = [&](int tid, std::atomic<uint64_t> &ops,
+                                bool &done) {
+    uint64_t cycle = 1024 * 1024 * 1024;
+    int cnt = 1024;
+    std::vector<PMemSpaceEntry> entries(cnt);
+    std::vector<void *> pointers(cnt);
+    for (int i = 1; i <= cycle; i++) {
+      if (done)
+        return;
+      int allocate_size = (cycle * block_size) % 1025;
+
+      for (int j = 0; j < cnt; j++) {
+        //        pointers[j] = malloc(allocate_size);
+        //                pointers[j] = memkind_malloc(kind, allocate_size);
+        entries[j] = allocator->Allocate(allocate_size);
+      }
+
+      for (int j = 0; j < cnt; j++) {
+        //        free(pointers[j]);
+        //                memkind_free(kind, pointers[j]);
+        allocator->Free(entries[j]);
+      }
+      ops += cnt;
+    }
+  };
+
   printf("Test Allocation / Free\n");
   LaunchTest(threads, benchmark_time, AllocateFree);
+  printf("Test Allocation / Access / Free\n");
+  LaunchTest(threads, benchmark_time, AllocateAccessFree);
   return 0;
 }
