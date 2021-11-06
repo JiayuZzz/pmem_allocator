@@ -133,32 +133,36 @@ PMemAllocatorImpl::PMemAllocatorImpl(char *pmem, uint64_t pmem_size,
       block_size_(hint.allocation_unit), segment_size_(hint.segment_size),
       bg_thread_interval_(hint.bg_thread_interval),
       max_classified_record_block_size_(
-          calculate_block_size(hint.max_common_allocation_size)),
+          calculate_block_size(hint.max_allocation_size)),
       segment_record_size_(pmem_size / segment_size_, 0),
       pool_(max_classified_record_block_size_),
       thread_cache_(max_access_threads, max_classified_record_block_size_),
-      offset_head_(0), closing_(false) {
+      segment_head_(0), closing_(false) {
   init_data_size_2_block_size();
   if (bg_thread_interval_ > 0) {
     bg_threads_.emplace_back(&PMemAllocatorImpl::BackgroundWork, this);
   }
 }
 
-void PMemAllocatorImpl::Free(const PMemSpaceEntry &entry) {
+void PMemAllocatorImpl::Free(void *addr) {
+  if (addr == nullptr) {
+    return;
+  }
+
   if (!MaybeInitAccessThread()) {
     fprintf(stderr, "too many thread access allocator!\n");
     std::abort();
   }
 
-  if (entry.size > 0 && entry.addr != nullptr) {
-    assert(entry.size % block_size_ == 0);
-    auto b_size = entry.size / block_size_;
+  uint32_t b_size = addrRecordSize(addr);
+
+  if (b_size > 0) {
     auto &thread_cache = thread_cache_[access_thread.id];
     std::unique_lock<SpinMutex> ul(thread_cache.locks[b_size]);
     assert(b_size < thread_cache.freelists.size());
     // Conflict with bg thread happens only if free entries more than
     // kMinMovableListSize
-    thread_cache.freelists[b_size].emplace_back(entry.addr);
+    thread_cache.freelists[b_size].emplace_back(addr);
   }
 }
 
@@ -189,20 +193,14 @@ PMemAllocatorImpl::~PMemAllocatorImpl() {
   pmem_unmap(pmem_, pmem_size_);
 }
 
-bool PMemAllocatorImpl::AllocateSegmentSpace(PMemSpaceEntry *segment_entry,
+bool PMemAllocatorImpl::AllocateSegmentSpace(Segment *segment,
                                              uint32_t record_size) {
-  uint64_t offset;
   while (1) {
-    offset = offset_head_.load(std::memory_order_relaxed);
-    if (offset < pmem_size_) {
-      if (offset_head_.compare_exchange_strong(offset,
-                                               offset + segment_size_)) {
-        if (offset > pmem_size_ - segment_size_) {
-          return false;
-        }
-        Free(*segment_entry);
-        *segment_entry = PMemSpaceEntry{offset2addr(offset), segment_size_};
-        segment_record_size_[offset / segment_size_] = record_size;
+    uint64_t new_segment = segment_head_.load(std::memory_order_relaxed);
+    if (new_segment * segment_size_ + segment_size_ < pmem_size_) {
+      if (segment_head_.compare_exchange_strong(new_segment, new_segment + 1)) {
+        *segment = Segment{segment2addr(new_segment), segment_size_};
+        segment_record_size_[new_segment] = record_size;
         return true;
       }
       continue;
@@ -211,19 +209,22 @@ bool PMemAllocatorImpl::AllocateSegmentSpace(PMemSpaceEntry *segment_entry,
   }
 }
 
-PMemSpaceEntry PMemAllocatorImpl::Allocate(uint64_t size) {
-  PMemSpaceEntry space_entry;
+void *PMemAllocatorImpl::Allocate(uint64_t size) {
+  void *ret = nullptr;
   if (!MaybeInitAccessThread()) {
     fprintf(stderr, "too many thread access allocator!\n");
-    return space_entry;
+    return nullptr;
   }
   uint32_t b_size = size_2_block_size(size);
   uint32_t aligned_size = b_size * block_size_;
   // Now the requested block size should smaller than segment size
   if (aligned_size > segment_size_ || aligned_size == 0) {
-    fprintf(stderr,
-            "allocating size is 0 or larger than PMem allocator segment\n");
-    return space_entry;
+    fprintf(
+        stderr,
+        "allocating size: %lu size, size is 0 or larger than PMem allocator "
+        "segment\n",
+        size);
+    return nullptr;
   }
   auto &thread_cache = thread_cache_[access_thread.id];
   for (auto i = b_size; i < thread_cache.freelists.size(); i++) {
@@ -236,8 +237,7 @@ PMemSpaceEntry PMemAllocatorImpl::Allocate(uint64_t size) {
         }
         // Get space from free list
         if (thread_cache.freelists[i].size() > 0) {
-          space_entry.addr = thread_cache.freelists[i].back();
-          space_entry.size = i * block_size_;
+          ret = thread_cache.freelists[i].back();
           thread_cache.freelists[i].pop_back();
           break;
         }
@@ -250,12 +250,11 @@ PMemSpaceEntry PMemAllocatorImpl::Allocate(uint64_t size) {
       }
     }
     assert(thread_cache.segments[i].size >= aligned_size);
-    space_entry.addr = thread_cache.segments[i].addr;
-    space_entry.size = aligned_size;
+    ret = thread_cache.segments[i].addr;
     thread_cache.segments[i].size -= aligned_size;
     thread_cache.segments[i].addr =
         (char *)thread_cache.segments[i].addr + aligned_size;
     break;
   }
-  return space_entry;
+  return ret;
 }

@@ -21,9 +21,6 @@
 constexpr uint64_t kNullPmemOffset = UINT64_MAX;
 constexpr uint64_t kMinMovableListSize = 8;
 
-using FreeList = std::vector<void *>;
-using Segment = PMemSpaceEntry;
-
 // Manage allocation/de-allocation of PMem space at block unit
 //
 // PMem space consists of several segment, and a segment is consists of
@@ -40,17 +37,10 @@ public:
   ~PMemAllocatorImpl();
 
   // Allocate a PMem space, return address and actually allocated space in bytes
-  PMemSpaceEntry Allocate(uint64_t size) override;
+  void *Allocate(uint64_t size) override;
 
   // Free a PMem space entry. The entry should be allocated by this allocator
-  void Free(const PMemSpaceEntry &entry) override;
-
-  inline void *offset2addr(uint64_t offset) {
-    if (validate_offset(offset)) {
-      return pmem_ + offset;
-    }
-    return nullptr;
-  }
+  void Free(void *addr) override;
 
   // Populate PMem space so the following access can be faster
   // Warning! this will zero the entire PMem space
@@ -60,6 +50,16 @@ public:
   void BackgroundWork();
 
 private:
+  using FreeList = std::vector<void *>;
+
+  struct Segment {
+    Segment() : addr(nullptr), size(0) {}
+
+    Segment(void *_addr, uint64_t _size) : addr(_addr), size(_size) {}
+
+    void *addr;
+    uint64_t size;
+  };
   // free entry pool consists of three level vectors, the first level
   // indicates different block size, each block size consists of several free
   // space entry lists (the second level), and each list consists of several
@@ -108,6 +108,13 @@ private:
     return thread_manager_->MaybeInitThread(access_thread);
   }
 
+  inline void *offset2addr(uint64_t offset) {
+    if (validate_offset(offset)) {
+      return pmem_ + offset;
+    }
+    return nullptr;
+  }
+
   inline uint64_t addr2offset(const void *addr) {
     if (addr) {
       uint64_t offset = (char *)addr - pmem_;
@@ -116,6 +123,10 @@ private:
       }
     }
     return kNullPmemOffset;
+  }
+
+  inline void *segment2addr(uint64_t segment) {
+    return offset2addr(segment * segment_size_);
   }
 
   inline uint64_t addr2segment(const void *addr) {
@@ -156,8 +167,7 @@ private:
 
   static_assert(sizeof(ThreadCache) % 64 == 0);
 
-  bool AllocateSegmentSpace(PMemSpaceEntry *segment_entry,
-                            uint32_t record_size);
+  bool AllocateSegmentSpace(Segment *segment, uint32_t record_size);
 
   void init_data_size_2_block_size() {
     data_size_2_block_size_.resize(4096);
@@ -185,8 +195,8 @@ private:
   const uint32_t bg_thread_interval_;
 
   char *pmem_;
-  std::atomic<uint64_t> offset_head_;
   SpaceEntryPool pool_;
+  std::atomic<uint64_t> segment_head_;
   std::vector<uint32_t> segment_record_size_;
 
   std::vector<ThreadCache> thread_cache_;
