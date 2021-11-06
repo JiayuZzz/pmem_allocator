@@ -4,6 +4,7 @@
 #include "pmem_allocator.hpp"
 #include <atomic>
 #include <functional>
+#include <libpmem.h>
 #include <random>
 #include <thread>
 #include <unistd.h>
@@ -51,12 +52,12 @@ void LaunchTest(
 int main() {
   int threads = 32;
   int block_size = 32;
-  uint64_t benchmark_time = 30;
+  uint64_t benchmark_time = 10;
   std::atomic<uint64_t> ops;
   memkind_t kind;
-  memkind_create_pmem("/mnt/pmem0/memkind", 100ULL * 1024 * 1024 * 1024, &kind);
+  memkind_create_pmem("/mnt/pmem0/memkind", 256ULL * 1024 * 1024 * 1024, &kind);
   PMemAllocator *allocator = PMemAllocator::NewPMemAllocator(
-      "/mnt/pmem0/pool", 1ULL * 100 * 1024 * 1024 * 1024, threads, false);
+      "/mnt/pmem0/pool", 256ULL * 1024 * 1024 * 1024, threads, false);
 
   auto AllocateFree = [&](int tid, std::atomic<uint64_t> &ops, bool &done) {
     uint64_t cycle = 1024 * 1024 * 1024;
@@ -96,7 +97,12 @@ int main() {
         //        pointers[j] = malloc(allocate_size);
         // pointers[j] = memkind_malloc(kind, allocate_size);
         pointers[j] = allocator->Allocate(allocate_size);
-        memcpy(pointers[j], random_str.data(), allocate_size);
+        if (pointers[j] == nullptr) {
+          fprintf(stderr, "out of space\n");
+          exit(0);
+        }
+        pmem_memcpy(pointers[j], random_str.data(), allocate_size,
+                    PMEM_F_MEM_NONTEMPORAL);
       }
 
       for (int j = 0; j < cnt; j++) {
