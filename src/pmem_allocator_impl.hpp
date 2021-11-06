@@ -118,11 +118,22 @@ private:
     return kNullPmemOffset;
   }
 
+  inline uint64_t addr2segment(const void *addr) {
+    return addr2offset(addr) / segment_size_;
+  }
+
+  inline uint32_t addrRecordSize(const void *addr) {
+    auto segment = addr2segment(addr);
+    assert(segment < segment_record_size_.size());
+    assert(segment_record_size_[segment] > 0);
+    return segment_record_size_[segment];
+  }
+
   inline bool validate_offset(uint64_t offset) {
     return offset < pmem_size_ && offset != kNullPmemOffset;
   }
 
-  // Write threads cache a dedicated PMem segment and a free space to
+  // Write threads cache a list of dedicated PMem segments and free lists to
   // avoid contention
   struct alignas(64) ThreadCache {
     ThreadCache(uint32_t max_classified_block_size)
@@ -145,7 +156,8 @@ private:
 
   static_assert(sizeof(ThreadCache) % 64 == 0);
 
-  bool AllocateSegmentSpace(PMemSpaceEntry *segment_entry);
+  bool AllocateSegmentSpace(PMemSpaceEntry *segment_entry,
+                            uint32_t record_size);
 
   void init_data_size_2_block_size() {
     data_size_2_block_size_.resize(4096);
@@ -175,6 +187,7 @@ private:
   char *pmem_;
   std::atomic<uint64_t> offset_head_;
   SpaceEntryPool pool_;
+  std::vector<uint32_t> segment_record_size_;
 
   std::vector<ThreadCache> thread_cache_;
   std::shared_ptr<ThreadManager> thread_manager_;

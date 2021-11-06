@@ -134,6 +134,7 @@ PMemAllocatorImpl::PMemAllocatorImpl(char *pmem, uint64_t pmem_size,
       bg_thread_interval_(hint.bg_thread_interval),
       max_classified_record_block_size_(
           calculate_block_size(hint.max_common_allocation_size)),
+      segment_record_size_(pmem_size / segment_size_, 0),
       pool_(max_classified_record_block_size_),
       thread_cache_(max_access_threads, max_classified_record_block_size_),
       offset_head_(0), closing_(false) {
@@ -188,7 +189,8 @@ PMemAllocatorImpl::~PMemAllocatorImpl() {
   pmem_unmap(pmem_, pmem_size_);
 }
 
-bool PMemAllocatorImpl::AllocateSegmentSpace(PMemSpaceEntry *segment_entry) {
+bool PMemAllocatorImpl::AllocateSegmentSpace(PMemSpaceEntry *segment_entry,
+                                             uint32_t record_size) {
   uint64_t offset;
   while (1) {
     offset = offset_head_.load(std::memory_order_relaxed);
@@ -200,6 +202,7 @@ bool PMemAllocatorImpl::AllocateSegmentSpace(PMemSpaceEntry *segment_entry) {
         }
         Free(*segment_entry);
         *segment_entry = PMemSpaceEntry{offset2addr(offset), segment_size_};
+        segment_record_size_[offset / segment_size_] = record_size;
         return true;
       }
       continue;
@@ -240,7 +243,7 @@ PMemSpaceEntry PMemAllocatorImpl::Allocate(uint64_t size) {
         }
       }
       // Allocate a new segment for requesting block size
-      if (!AllocateSegmentSpace(&thread_cache.segments[b_size])) {
+      if (!AllocateSegmentSpace(&thread_cache.segments[b_size], b_size)) {
         continue;
       } else {
         i = b_size;
