@@ -29,7 +29,7 @@ constexpr uint64_t kMinMovableListSize = 8;
 class PMemAllocatorImpl : public PMemAllocator {
 public:
   PMemAllocatorImpl(char *pmem, uint64_t pmem_size, uint32_t max_access_threads,
-                    const PMemAllocatorHint &hint);
+                    const PMemAllocatorConfig &config);
 
   PMemAllocatorImpl(char *pmem, uint64_t pmem_size, uint64_t segment_size,
                     uint32_t block_size, uint32_t max_access_threads);

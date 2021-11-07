@@ -11,16 +11,11 @@
 #include "pmem_allocator_impl.hpp"
 #include "thread_manager.hpp"
 
-PMemAllocator *PMemAllocator::NewPMemAllocator(const std::string &pmem_file,
-                                               uint64_t pmem_size,
-                                               uint32_t max_access_threads,
-                                               bool devdax_mode,
-                                               PMemAllocatorHint *hint) {
-  PMemAllocatorHint allocator_configs;
-  if (hint != nullptr) {
-    allocator_configs = *hint;
-  }
-
+PMemAllocator *
+PMemAllocator::NewPMemAllocator(const std::string &pmem_file,
+                                uint64_t pmem_size, uint32_t max_access_threads,
+                                bool devdax_mode,
+                                const PMemAllocatorConfig &config) {
   int is_pmem;
   uint64_t mapped_size;
   char *pmem;
@@ -69,8 +64,8 @@ PMemAllocator *PMemAllocator::NewPMemAllocator(const std::string &pmem_file,
 
   PMemAllocatorImpl *allocator = nullptr;
   try {
-    allocator = new PMemAllocatorImpl(pmem, pmem_size, max_access_threads,
-                                      allocator_configs);
+    allocator =
+        new PMemAllocatorImpl(pmem, pmem_size, max_access_threads, config);
   } catch (std::bad_alloc &err) {
     fprintf(stderr, "Error while initialize PMemAllocatorImpl: %s\n",
             err.what());
@@ -127,13 +122,13 @@ void PMemAllocatorImpl::BackgroundWork() {
 
 PMemAllocatorImpl::PMemAllocatorImpl(char *pmem, uint64_t pmem_size,
                                      uint32_t max_access_threads,
-                                     const PMemAllocatorHint &hint)
+                                     const PMemAllocatorConfig &config)
     : pmem_(pmem), pmem_size_(pmem_size),
       thread_manager_(std::make_shared<ThreadManager>(max_access_threads)),
-      block_size_(hint.allocation_unit), segment_size_(hint.segment_size),
-      bg_thread_interval_(hint.bg_thread_interval),
+      block_size_(config.allocation_unit), segment_size_(config.segment_size),
+      bg_thread_interval_(config.bg_thread_interval),
       max_classified_record_block_size_(
-          calculate_block_size(hint.max_allocation_size)),
+          calculate_block_size(config.max_allocation_size)),
       segment_record_size_(pmem_size / segment_size_, 0),
       pool_(max_classified_record_block_size_),
       thread_cache_(max_access_threads, max_classified_record_block_size_),

@@ -56,8 +56,10 @@ int main() {
   std::atomic<uint64_t> ops;
   memkind_t kind;
   memkind_create_pmem("/mnt/pmem0/memkind", 256ULL * 1024 * 1024 * 1024, &kind);
+  PMemAllocatorConfig config;
+  config.max_allocation_size = 1024;
   PMemAllocator *allocator = PMemAllocator::NewPMemAllocator(
-      "/mnt/pmem0/pool", 256ULL * 1024 * 1024 * 1024, threads, false);
+      "/mnt/pmem0/pool", 256ULL * 1024 * 1024 * 1024, threads, false, config);
 
   auto AllocateFree = [&](int tid, std::atomic<uint64_t> &ops, bool &done) {
     uint64_t cycle = 1024 * 1024 * 1024;
