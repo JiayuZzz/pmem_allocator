@@ -14,7 +14,7 @@
 // equal or larger than max_allocation_size, recommand larger than 128 *
 // max_allocation_size, it should be devidable by allocation_unit
 //
-// See pmem_allocator.pdf for more information
+// See doc/pmem_allocator.pdf for more information
 struct PMemAllocatorConfig {
   PMemAllocatorConfig() = default;
 
@@ -47,7 +47,7 @@ public:
   // true, use devdax device instead of file system config: allocator internal
   // configs
   //
-  // See pmem_allocator.pdf for more information
+  // See doc/pmem_allocator.pdf for more information
   static PMemAllocator *NewPMemAllocator(const std::string &pmem_file,
                                          uint64_t pmem_size,
                                          uint32_t max_access_threads,
