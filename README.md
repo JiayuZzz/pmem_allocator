@@ -1,5 +1,9 @@
 # PMem Allocator
 
+## Design
+
+Please refer to [Design](./doc/pmem_allocator.md)
+
 ## Build
 
     mkdir build
