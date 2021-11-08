@@ -128,7 +128,7 @@ PMemAllocatorImpl::PMemAllocatorImpl(char *pmem, uint64_t pmem_size,
       block_size_(config.allocation_unit), segment_size_(config.segment_size),
       bg_thread_interval_(config.bg_thread_interval),
       max_classified_record_block_size_(
-          calculate_block_size(config.max_allocation_size)),
+          CalculateBlockSize(config.max_allocation_size)),
       segment_record_size_(pmem_size / segment_size_, 0),
       pool_(max_classified_record_block_size_),
       thread_cache_(max_access_threads, max_classified_record_block_size_),
@@ -149,7 +149,11 @@ void PMemAllocatorImpl::Free(void *addr) {
     std::abort();
   }
 
-  uint32_t b_size = addrRecordSize(addr);
+  uint64_t segment = Addr2Segment(addr);
+  if (segment == kPMemNull)
+    return;
+  uint32_t b_size = segment_record_size_[segment];
+  assert(b_size > 0);
 
   if (b_size > 0) {
     auto &thread_cache = thread_cache_[access_thread.id];
@@ -194,7 +198,7 @@ bool PMemAllocatorImpl::AllocateSegmentSpace(Segment *segment,
     uint64_t new_segment = segment_head_.load(std::memory_order_relaxed);
     if (new_segment * segment_size_ + segment_size_ < pmem_size_) {
       if (segment_head_.compare_exchange_strong(new_segment, new_segment + 1)) {
-        *segment = Segment{segment2addr(new_segment), segment_size_};
+        *segment = Segment{Segment2Addr(new_segment), segment_size_};
         segment_record_size_[new_segment] = record_size;
         return true;
       }
@@ -210,7 +214,7 @@ void *PMemAllocatorImpl::Allocate(uint64_t size) {
     fprintf(stderr, "too many thread access allocator!\n");
     return nullptr;
   }
-  uint32_t b_size = size_2_block_size(size);
+  uint32_t b_size = Size2BlockSize(size);
   uint32_t aligned_size = b_size * block_size_;
   // Now the requested block size should smaller than segment size
   if (aligned_size > segment_size_ || aligned_size == 0) {

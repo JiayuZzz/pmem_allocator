@@ -39,6 +39,10 @@ public:
   // Free a PMem space, it should be allocated by this allocator
   virtual void Free(void *addr) = 0;
 
+  // Release this access thread from the allocator, this will be auto-called
+  // while the thread exit
+  virtual void Release() = 0;
+
   // Create a new PMem allocator instance, map space at pmem file
   // pmem_file: the file on DAX file system or devdax device for mapping PMem
   // space pmem_size: max usable space max_access_threads: max concurrent
@@ -46,6 +50,7 @@ public:
   // only if the thread exit or call allocator->Release() devdax_mode: if set
   // true, use devdax device instead of file system config: allocator internal
   // configs
+  // Notice: Only support one allocator instance in a process for now
   //
   // See doc/pmem_allocator.pdf for more information
   static PMemAllocator *NewPMemAllocator(const std::string &pmem_file,

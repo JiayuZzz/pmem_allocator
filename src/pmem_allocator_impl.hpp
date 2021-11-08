@@ -18,7 +18,7 @@
 #include "pmem_allocator.hpp"
 #include "thread_manager.hpp"
 
-constexpr uint64_t kNullPmemOffset = UINT64_MAX;
+constexpr uint64_t kPMemNull = UINT64_MAX;
 constexpr uint64_t kMinMovableListSize = 8;
 
 // Manage allocation/de-allocation of PMem space at block unit
@@ -42,6 +42,10 @@ public:
   // Free a PMem space entry. The entry should be allocated by this allocator
   void Free(void *addr) override;
 
+  // Release this access thread from the allocator, this will be auto-called
+  // while the thread exit
+  void Release() override { access_thread.Release(); }
+
   // Populate PMem space so the following access can be faster
   // Warning! this will zero the entire PMem space
   void PopulateSpace();
@@ -60,6 +64,7 @@ private:
     void *addr;
     uint64_t size;
   };
+
   // free entry pool consists of three level vectors, the first level
   // indicates different block size, each block size consists of several free
   // space entry lists (the second level), and each list consists of several
@@ -108,40 +113,34 @@ private:
     return thread_manager_->MaybeInitThread(access_thread);
   }
 
-  inline void *offset2addr(uint64_t offset) {
-    if (validate_offset(offset)) {
+  inline void *Offset2Addr(uint64_t offset) {
+    if (ValidateOffset(offset)) {
       return pmem_ + offset;
     }
     return nullptr;
   }
 
-  inline uint64_t addr2offset(const void *addr) {
+  inline uint64_t Addr2Offset(const void *addr) {
     if (addr) {
       uint64_t offset = (char *)addr - pmem_;
-      if (validate_offset(offset)) {
+      if (ValidateOffset(offset)) {
         return offset;
       }
     }
-    return kNullPmemOffset;
+    return kPMemNull;
   }
 
-  inline void *segment2addr(uint64_t segment) {
-    return offset2addr(segment * segment_size_);
+  inline void *Segment2Addr(uint64_t segment) {
+    return Offset2Addr(segment * segment_size_);
   }
 
-  inline uint64_t addr2segment(const void *addr) {
-    return addr2offset(addr) / segment_size_;
+  inline uint64_t Addr2Segment(const void *addr) {
+    uint64_t offset = Addr2Offset(addr);
+    return offset == kPMemNull ? kPMemNull : offset / segment_size_;
   }
 
-  inline uint32_t addrRecordSize(const void *addr) {
-    auto segment = addr2segment(addr);
-    assert(segment < segment_record_size_.size());
-    assert(segment_record_size_[segment] > 0);
-    return segment_record_size_[segment];
-  }
-
-  inline bool validate_offset(uint64_t offset) {
-    return offset < pmem_size_ && offset != kNullPmemOffset;
+  inline bool ValidateOffset(uint64_t offset) {
+    return offset < pmem_size_ && offset != kPMemNull;
   }
 
   // Write threads cache a list of dedicated PMem segments and free lists to
@@ -177,14 +176,14 @@ private:
     }
   }
 
-  inline uint32_t size_2_block_size(uint32_t data_size) {
+  inline uint32_t Size2BlockSize(uint32_t data_size) {
     if (data_size < data_size_2_block_size_.size()) {
       return data_size_2_block_size_[data_size];
     }
-    return calculate_block_size(data_size);
+    return CalculateBlockSize(data_size);
   }
 
-  inline uint32_t calculate_block_size(uint32_t data_size) {
+  inline uint32_t CalculateBlockSize(uint32_t data_size) {
     return data_size / block_size_ + (data_size % block_size_ == 0 ? 0 : 1);
   }
 

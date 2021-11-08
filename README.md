@@ -24,6 +24,7 @@
 // max_access_threads: max concurrent threads to access this allocator, resource of a access thread is release only if the thread exit or call allocator->Release()
 // devdax_mode: if set true, use devdax device instead of file system
 // config: allocator internal configs
+// Notice: Only support one allocator instance in a process for now
 //
 // See doc/pmem_allocator.pdf for more information
 static PMemAllocator *PMemAllocator::NewPMemAllocator(const std::string &pmem_file,
@@ -47,6 +48,7 @@ struct PMemAllocatorConfig {
 
 void* PMemAllocator::Allocate(uint64_t size);
 void PMemAllocator::Free(void *addr);
+void PMemAllocator::Release();
 ```
 
 ### Example

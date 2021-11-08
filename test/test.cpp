@@ -1,6 +1,5 @@
 #include "string.h"
 
-#include "memkind.h"
 #include "pmem_allocator.hpp"
 #include <atomic>
 #include <functional>
@@ -54,8 +53,6 @@ int main() {
   int block_size = 32;
   uint64_t benchmark_time = 10;
   std::atomic<uint64_t> ops;
-  memkind_t kind;
-  memkind_create_pmem("/mnt/pmem0/memkind", 256ULL * 1024 * 1024 * 1024, &kind);
   PMemAllocatorConfig config;
   config.max_allocation_size = 1024;
   PMemAllocator *allocator = PMemAllocator::NewPMemAllocator(
@@ -71,14 +68,10 @@ int main() {
       size_t allocate_size = (i * block_size) % 1024 + 1;
 
       for (int j = 0; j < cnt; j++) {
-        //        pointers[j] = malloc(allocate_size);
-        //                pointers[j] = memkind_malloc(kind, allocate_size);
         pointers[j] = allocator->Allocate(allocate_size);
       }
 
       for (int j = 0; j < cnt; j++) {
-        //        free(pointers[j]);
-        //                memkind_free(kind, pointers[j]);
         allocator->Free(pointers[j]);
       }
       ops += cnt;
@@ -96,8 +89,6 @@ int main() {
       size_t allocate_size = (i * block_size) % 1024 + 1;
 
       for (int j = 0; j < cnt; j++) {
-        //        pointers[j] = malloc(allocate_size);
-        // pointers[j] = memkind_malloc(kind, allocate_size);
         pointers[j] = allocator->Allocate(allocate_size);
         if (pointers[j] == nullptr) {
           fprintf(stderr, "out of space\n");
