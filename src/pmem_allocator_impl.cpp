@@ -11,6 +11,9 @@
 #include "pmem_allocator_impl.hpp"
 #include "thread_manager.hpp"
 
+std::atomic<uint64_t> PMemAllocatorImpl::next_instance_(0);
+thread_local std::vector<Thread> PMemAllocatorImpl::access_threads_(0);
+
 PMemAllocator *
 PMemAllocator::NewPMemAllocator(const std::string &pmem_file,
                                 uint64_t pmem_size, uint32_t max_access_threads,
@@ -136,7 +139,12 @@ PMemAllocatorImpl::PMemAllocatorImpl(char *pmem, uint64_t pmem_size,
       segment_record_size_(pmem_size / segment_size_, 0),
       pool_(max_classified_record_block_size_),
       thread_cache_(max_access_threads, max_classified_record_block_size_),
-      segment_head_(0), closing_(false) {
+      segment_head_(0), closing_(false),
+      instance_id_(next_instance_.fetch_add(1, std::memory_order_relaxed)) {
+  if (instance_id_ > next_instance_) {
+    fprintf(stderr, "too many instance created (>%lu), abort\n", kMaxInstance);
+    throw std::bad_alloc();
+  }
   init_data_size_2_block_size();
   if (bg_thread_interval_ > 0) {
     bg_threads_.emplace_back(&PMemAllocatorImpl::BackgroundWork, this);
@@ -148,7 +156,9 @@ void PMemAllocatorImpl::Free(void *addr) {
     return;
   }
 
-  if (!MaybeInitAccessThread()) {
+  int t_id = MaybeInitAccessThread();
+
+  if (t_id < 0) {
     fprintf(stderr, "too many thread access allocator!\n");
     std::abort();
   }
@@ -160,7 +170,7 @@ void PMemAllocatorImpl::Free(void *addr) {
   assert(b_size > 0);
 
   if (b_size > 0) {
-    auto &thread_cache = thread_cache_[access_thread.id];
+    auto &thread_cache = thread_cache_[t_id];
     // Conflict with bg thread happens only if free entries more than
     // kMinMovableListSize
     std::unique_lock<SpinMutex> ul(thread_cache.locks[b_size]);
@@ -214,7 +224,8 @@ bool PMemAllocatorImpl::AllocateSegmentSpace(Segment *segment,
 
 void *PMemAllocatorImpl::Allocate(uint64_t size) {
   void *ret = nullptr;
-  if (!MaybeInitAccessThread()) {
+  int t_id = MaybeInitAccessThread();
+  if (t_id < 0) {
     fprintf(stderr, "too many thread access allocator!\n");
     return nullptr;
   }
@@ -228,7 +239,7 @@ void *PMemAllocatorImpl::Allocate(uint64_t size) {
         size, max_allocation_size_);
     return nullptr;
   }
-  auto &thread_cache = thread_cache_[access_thread.id];
+  auto &thread_cache = thread_cache_[t_id];
   for (auto i = b_size; i < thread_cache.freelists.size(); i++) {
     if (thread_cache.segments[i].size < aligned_size) {
       // Fetch free list from pool

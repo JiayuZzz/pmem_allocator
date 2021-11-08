@@ -20,6 +20,7 @@
 
 constexpr uint64_t kPMemNull = UINT64_MAX;
 constexpr uint64_t kMinMovableListSize = 8;
+constexpr uint64_t kMaxInstance = 1024;
 
 // Manage allocation/de-allocation of PMem space at block unit
 //
@@ -44,7 +45,12 @@ public:
 
   // Release this access thread from the allocator, this will be auto-called
   // while the thread exit
-  void Release() override { access_thread.Release(); }
+  void Release() override {
+    if (access_threads_.size() < instance_id_) {
+      return;
+    }
+    access_threads_[instance_id_].Release();
+  }
 
   // Populate PMem space so the following access can be faster
   // Warning! this will zero the entire PMem space
@@ -137,8 +143,11 @@ private:
     FixVector<SpinMutex> spins_;
   };
 
-  inline bool MaybeInitAccessThread() {
-    return thread_manager_->MaybeInitThread(access_thread);
+  inline int MaybeInitAccessThread() {
+    if (access_threads_.size() <= instance_id_) {
+      access_threads_.resize(instance_id_ + 1);
+    }
+    return thread_manager_->MaybeInitThread(access_threads_[instance_id_]);
   }
 
   inline void *Offset2Addr(uint64_t offset) {
@@ -234,4 +243,8 @@ private:
   std::vector<uint16_t> data_size_2_block_size_;
 
   bool closing_;
+
+  uint64_t instance_id_;
+  static std::atomic<uint64_t> next_instance_;
+  static thread_local std::vector<Thread> access_threads_;
 };

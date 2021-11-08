@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
-* Copyright(c) 2021 Intel Corporation
-*/
+ * Copyright(c) 2021 Intel Corporation
+ */
 
 #pragma once
 
@@ -28,7 +28,7 @@ class ThreadManager : public std::enable_shared_from_this<ThreadManager> {
 public:
   ThreadManager(uint32_t max_threads) : max_threads_(max_threads), ids_(0) {}
 
-  bool MaybeInitThread(Thread &t);
+  int MaybeInitThread(Thread &t);
 
   void Release(const Thread &t);
 
@@ -38,5 +38,3 @@ private:
   uint32_t max_threads_;
   SpinMutex spin_;
 };
-
-extern thread_local Thread access_thread;

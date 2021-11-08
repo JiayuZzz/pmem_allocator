@@ -29,8 +29,6 @@ Please refer to [Design](./doc/pmem_allocator.md)
 // devdax_mode: if set true, use devdax device instead of file system
 // config: allocator internal configs
 // 
-// Notice: Only support one allocator instance in a process for now
-//
 // See doc/pmem_allocator.md for more details
 static PMemAllocator *PMemAllocator::NewPMemAllocator(const std::string &pmem_file,
                                          uint64_t pmem_size,
