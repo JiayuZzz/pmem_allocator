@@ -16,6 +16,9 @@ PMemAllocator::NewPMemAllocator(const std::string &pmem_file,
                                 uint64_t pmem_size, uint32_t max_access_threads,
                                 bool devdax_mode,
                                 const PMemAllocatorConfig &config) {
+  if (!PMemAllocatorImpl::ValidateConfig(config)) {
+    return nullptr;
+  }
   int is_pmem;
   uint64_t mapped_size;
   char *pmem;
@@ -129,6 +132,7 @@ PMemAllocatorImpl::PMemAllocatorImpl(char *pmem, uint64_t pmem_size,
       bg_thread_interval_(config.bg_thread_interval),
       max_classified_record_block_size_(
           CalculateBlockSize(config.max_allocation_size)),
+      max_allocation_size_(config.max_allocation_size),
       segment_record_size_(pmem_size / segment_size_, 0),
       pool_(max_classified_record_block_size_),
       thread_cache_(max_access_threads, max_classified_record_block_size_),
@@ -157,10 +161,10 @@ void PMemAllocatorImpl::Free(void *addr) {
 
   if (b_size > 0) {
     auto &thread_cache = thread_cache_[access_thread.id];
-    std::unique_lock<SpinMutex> ul(thread_cache.locks[b_size]);
-    assert(b_size < thread_cache.freelists.size());
     // Conflict with bg thread happens only if free entries more than
     // kMinMovableListSize
+    std::unique_lock<SpinMutex> ul(thread_cache.locks[b_size]);
+    assert(b_size < thread_cache.freelists.size());
     thread_cache.freelists[b_size].emplace_back(addr);
   }
 }
@@ -216,13 +220,12 @@ void *PMemAllocatorImpl::Allocate(uint64_t size) {
   }
   uint32_t b_size = Size2BlockSize(size);
   uint32_t aligned_size = b_size * block_size_;
-  // Now the requested block size should smaller than segment size
-  if (aligned_size > segment_size_ || aligned_size == 0) {
+  if (aligned_size > max_allocation_size_ || aligned_size == 0) {
     fprintf(
         stderr,
         "allocating size: %lu size, size is 0 or larger than PMem allocator "
-        "segment\n",
-        size);
+        "max allocation size %lu\n",
+        size, max_allocation_size_);
     return nullptr;
   }
   auto &thread_cache = thread_cache_[access_thread.id];

@@ -58,6 +58,10 @@ int main() {
   PMemAllocator *allocator = PMemAllocator::NewPMemAllocator(
       "/mnt/pmem0/pool", 256ULL * 1024 * 1024 * 1024, threads, false, config);
 
+  if (allocator == nullptr) {
+    std::abort();
+  }
+
   auto AllocateFree = [&](int tid, std::atomic<uint64_t> &ops, bool &done) {
     uint64_t cycle = 1024 * 1024 * 1024;
     int cnt = 1024;

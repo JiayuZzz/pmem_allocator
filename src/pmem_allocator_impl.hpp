@@ -53,6 +53,34 @@ public:
   // Regularly execute by background thread
   void BackgroundWork();
 
+  static bool ValidateConfig(const PMemAllocatorConfig &config) {
+    auto is_2pown = [](uint64_t n) { return (n > 0) && (n & (n - 1)) == 0; };
+
+    if (config.allocation_unit < 8) {
+      fprintf(stderr, "allocation unit should > 8\n");
+      return false;
+    }
+
+    if (!is_2pown(config.allocation_unit)) {
+      fprintf(stderr, "allocation unit should be 2^n\n");
+      return false;
+    }
+
+    if (config.max_allocation_size > config.allocation_unit * 1024) {
+      fprintf(stderr,
+              "max allocation size should <= allocation_unit * 1024 \n");
+    }
+
+    if (config.segment_size < 1 << 20) {
+      fprintf(stderr,
+              "segment_size should larger than 1MB and max_allocation_size ( "
+              "recommand > 128 * max_allocation_size) for performance.\n");
+      return false;
+    }
+
+    return true;
+  }
+
 private:
   using FreeList = std::vector<void *>;
 
@@ -192,6 +220,7 @@ private:
   const uint32_t block_size_;
   const uint32_t max_classified_record_block_size_;
   const uint32_t bg_thread_interval_;
+  const uint64_t max_allocation_size_;
 
   char *pmem_;
   SpaceEntryPool pool_;

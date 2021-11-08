@@ -21,12 +21,13 @@
 // Create a new PMem allocator instance, map space at pmem file
 // pmem_file: the file on DAX file system or devdax device for mapping PMem space
 // pmem_size: max usable space
-// max_access_threads: max concurrent threads to access this allocator, resource of a access thread is release only if the thread exit or call allocator->Release()
+// max_access_threads: max concurrent threads to access this allocator, resource of a // access thread is release only if the thread exit or call allocator->Release()
 // devdax_mode: if set true, use devdax device instead of file system
 // config: allocator internal configs
+// 
 // Notice: Only support one allocator instance in a process for now
 //
-// See doc/pmem_allocator.pdf for more information
+// See doc/pmem_allocator.md for more details
 static PMemAllocator *PMemAllocator::NewPMemAllocator(const std::string &pmem_file,
                                          uint64_t pmem_size,
                                          uint32_t max_access_threads,
@@ -35,10 +36,13 @@ static PMemAllocator *PMemAllocator::NewPMemAllocator(const std::string &pmem_fi
 
 // bg_thread_interval: interval to call bg thread to balance freed space among access threads
 // allocation_unit: minimal allocation unit, shoud be 2^n and no less than 8 bytes
-// max_allocation_size: max allocation size of the allocator, recommand no larger than allocation_unit * 1024
-// segment_size: It should be equal or larger than max_allocation_size, recommand larger than 128 * max_allocation_size, it should be devidable by allocation_unit
+// max_allocation_size: max allocation size of the allocator, recommand no larger 
+// than allocation_unit * 1024
+// segment_size: It should be equal or larger than max(1MB,max_allocation_size), 
+// recommand larger than 128 * max_allocation_size, it should be devidable by 
+// allocation_unit
 //
-// See doc/pmem_allocator.md for more information
+// See doc/pmem_allocator.md for more details
 struct PMemAllocatorConfig {
   float bg_thread_interval;
   uint32_t allocation_unit;
@@ -59,6 +63,7 @@ void PMemAllocator::Release();
 std::string path("/mnt/pmem0/allocator_pool");
 PMemAllocatorHint hint;
 PMemAllocator* allocator = PMemAllocator::NewPMemAllocator(path, 100ULL << 30, 32, false, hint);
+assert(allocator != nullptr);
 void* ptr = allocator->Allocate(1024);
 // do some thin with ptr
 allocator->Free(ptr);
